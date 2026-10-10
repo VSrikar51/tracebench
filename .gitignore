@@ -1,0 +1,19 @@
+# --- Python leftovers ---
+__pycache__/
+*.pyc
+
+# --- The Python "toy box" for this project ---
+.venv/
+
+# --- Secrets: NEVER put these on GitHub ---
+.env
+
+# --- Tool caches ---
+.pytest_cache/
+.ruff_cache/
+
+# --- Mac junk ---
+.DS_Store
+
+# --- Log files ---
+*.log
