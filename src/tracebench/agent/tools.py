@@ -164,12 +164,125 @@ def search_policies(query: str) -> dict:
         ],
     }
 
+AGENT_REFUND_LIMIT_CENTS = 10_000
+
+
+def issue_refund(order_id: int, customer_email: str, amount_usd: float, reason: str) -> dict:
+    """Refund money on a delivered order, within the store's hard limits."""
+    amount_cents = round(amount_usd * 100)
+    if amount_cents <= 0:
+        return {"error": "The refund amount must be more than $0.00."}
+    if not reason.strip():
+        return {"error": "Every refund needs a reason."}
+
+    with engine.begin() as conn:
+        order = conn.execute(text("""
+            SELECT o.id, o.status, o.total_cents, c.email
+            FROM store.orders AS o
+            JOIN store.customers AS c ON c.id = o.customer_id
+            WHERE o.id = :order_id
+            FOR UPDATE OF o
+        """), {"order_id": order_id}).mappings().first()
+
+        if order is None or order["email"].lower() != customer_email.strip().lower():
+            return {"error": f"No order {order_id} found for {customer_email}."}
+
+        if order["status"] != "delivered":
+            return {
+                "error": f"Order {order_id} is '{order['status']}'. "
+                "Only delivered orders can be refunded."
+            }
+
+        refunded_cents = conn.execute(text("""
+            SELECT COALESCE(sum(amount_cents), 0)
+            FROM store.refunds
+            WHERE order_id = :order_id
+        """), {"order_id": order_id}).scalar_one()
+
+        after_refund = refunded_cents + amount_cents
+        if after_refund > order["total_cents"]:
+            left = usd(order["total_cents"] - refunded_cents)
+            return {"error": f"Refund too large: only ${left:.2f} is left to refund on order {order_id}."}
+        if after_refund > AGENT_REFUND_LIMIT_CENTS:
+            return {
+                "error": "This refund would bring the total refunded on this order over "
+                "$100.00. Escalate it to a human instead."
+            }
+
+        refund_id = conn.execute(text("""
+            INSERT INTO store.refunds (order_id, amount_cents, reason)
+            VALUES (:order_id, :amount_cents, :reason)
+            RETURNING id
+        """), {
+            "order_id": order_id,
+            "amount_cents": amount_cents,
+            "reason": reason.strip(),
+        }).scalar_one()
+
+    return {
+        "refund_id": refund_id,
+        "order_id": order_id,
+        "amount_usd": usd(amount_cents),
+        "total_refunded_on_order_usd": usd(after_refund),
+        "message": "Refund issued. It will reach the original payment method within 5–7 business days.",
+    }
+
+
+def escalate_to_human(
+    reason: str,
+    customer_email: str | None = None,
+    order_id: int | None = None,
+) -> dict:
+    """Hand the case to a human specialist."""
+    if not reason.strip():
+        return {"error": "Every escalation needs a reason."}
+
+    with engine.begin() as conn:
+        customer_id = None
+        if customer_email:
+            customer_id = conn.execute(text("""
+                SELECT id FROM store.customers WHERE lower(email) = lower(:email)
+            """), {"email": customer_email.strip()}).scalar_one_or_none()
+
+        if order_id is not None:
+            exists = conn.execute(
+                text("SELECT 1 FROM store.orders WHERE id = :order_id"),
+                {"order_id": order_id},
+            ).first()
+            if exists is None:
+                return {"error": f"No order {order_id} exists. Check the number, or escalate without it."}
+
+        escalation_id = conn.execute(text("""
+            INSERT INTO store.escalations (customer_id, order_id, reason)
+            VALUES (:customer_id, :order_id, :reason)
+            RETURNING id
+        """), {
+            "customer_id": customer_id,
+            "order_id": order_id,
+            "reason": reason.strip(),
+        }).scalar_one()
+
+    return {
+        "escalation_id": escalation_id,
+        "message": "Escalated. A specialist will reply within 1 business day.",
+    }
+
 
 if __name__ == "__main__":
     import json
 
+    from tracebench.store.seed import seed
+
     with engine.connect() as conn:
         email = conn.execute(text("SELECT email FROM store.customers WHERE id = 1")).scalar_one()
+        shipped_order, shipped_email = conn.execute(text("""
+            SELECT o.id, c.email
+            FROM store.orders AS o
+            JOIN store.customers AS c ON c.id = o.customer_id
+            WHERE o.status = 'shipped'
+            ORDER BY o.id
+            LIMIT 1
+        """)).one()
 
     customer = get_customer(email)
     first_order = customer["orders"][0]["order_id"]
@@ -181,7 +294,25 @@ if __name__ == "__main__":
         "check_inventory('30 lb kibble')": check_inventory("30 lb kibble"),
         "check_inventory('feather wand')": check_inventory("feather wand"),
         "search_policies('damaged refund')": search_policies("damaged refund"),
+        "issue_refund $24.99 (allowed)": issue_refund(
+            first_order, email, 24.99, "Cat food bag arrived torn"
+        ),
+        "issue_refund $80.00 more (over the $100 limit)": issue_refund(
+            first_order, email, 80.00, "Customer changed their mind"
+        ),
+        "issue_refund (wrong email)": issue_refund(
+            first_order, "someone.else@example.com", 10.00, "Test"
+        ),
+        "issue_refund (order not delivered yet)": issue_refund(
+            shipped_order, shipped_email, 10.00, "Test"
+        ),
+        "escalate_to_human": escalate_to_human(
+            "Customer wants a refund over $100", email, first_order
+        ),
     }
     for title, result in examples.items():
         print(f"\n=== {title} ===")
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    print("\nResetting the store...")
+    seed()
