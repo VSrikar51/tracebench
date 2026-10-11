@@ -33,3 +33,27 @@ def load_policies() -> int:
             policies,
         )
     return len(policies)
+
+def search_policies(query: str, limit: int = 3) -> list[dict]:
+    """Find the policies that best match a question, best match first."""
+    sql = text("""
+        WITH q AS (
+            SELECT replace(plainto_tsquery('english', :query)::text, '&', '|')::tsquery AS query
+        )
+        SELECT p.id, p.title, p.body, ts_rank(p.search_vector, q.query) AS score
+        FROM store.policies AS p, q
+        WHERE p.search_vector @@ q.query
+        ORDER BY score DESC, p.id
+        LIMIT :limit
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"query": query, "limit": limit}).mappings().all()
+    return [dict(row) for row in rows]
+
+
+if __name__ == "__main__":
+    import sys
+
+    question = " ".join(sys.argv[1:])
+    for policy in search_policies(question):
+        print(f"{policy['score']:.3f}  {policy['id']}")
