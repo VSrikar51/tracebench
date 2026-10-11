@@ -5,9 +5,24 @@ from typing import Literal, Protocol
 from pydantic import BaseModel
 
 
+class ToolCall(BaseModel):
+    id: str
+    name: str
+    arguments: dict
+
+
 class Message(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
-    content: str
+    content: str = ""
+    tool_calls: list[ToolCall] = []
+    tool_call_id: str | None = None
+    tool_name: str | None = None
+
+
+class ToolSpec(BaseModel):
+    name: str
+    description: str
+    parameters: dict
 
 
 class LLMResponse(BaseModel):
@@ -17,12 +32,8 @@ class LLMResponse(BaseModel):
     output_tokens: int
     finish_reason: str
 
-class ToolSpec(BaseModel):
-    name: str
-    description: str
-    parameters: dict
 
 class LLMProvider(Protocol):
     name: str
 
-    def chat(self, messages: list[Message]) -> LLMResponse: ...
+    def chat(self, messages: list[Message], tools: list[ToolSpec] | None = None) -> LLMResponse: ...
