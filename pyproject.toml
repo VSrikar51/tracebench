@@ -5,6 +5,9 @@ description = "Tracing and evaluation platform for LLM agents"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.0",
+    "ollama>=0.6.3",
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-sdk>=1.45.1",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
     "sqlalchemy>=2.1.4",
