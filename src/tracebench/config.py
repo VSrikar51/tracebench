@@ -10,6 +10,9 @@ class Settings(BaseSettings):
 
     database_url: str
     store_today: date = date(2026, 10, 1)
+    agent_model: str = "qwen3.5:4b"
+    agent_think: bool = False
+    agent_num_ctx: int = 8192
 
 
 settings = Settings()
