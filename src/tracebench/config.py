@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     agent_model: str = "qwen3.5:4b"
     agent_think: bool = False
     agent_num_ctx: int = 8192
+    trace_content: bool = True
 
 
 settings = Settings()

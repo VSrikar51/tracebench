@@ -28,6 +28,8 @@ ERROR_TYPE = "error.type"
 
 # Our own attribute, not part of the spec, so it uses the project's name as a prefix.
 COST_USD = "tracebench.cost_usd"
+AGENT_STEPS = "tracebench.agent.steps"
+AGENT_STOP_REASON = "tracebench.agent.stop_reason"
 
 # Attributes that hold conversation content (see decision 0011).
 CONTENT_ATTRIBUTES = {INPUT_MESSAGES, OUTPUT_MESSAGES, TOOL_CALL_ARGUMENTS, TOOL_CALL_RESULT}

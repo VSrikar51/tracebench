@@ -35,5 +35,6 @@ class LLMResponse(BaseModel):
 
 class LLMProvider(Protocol):
     name: str
+    model: str
 
     def chat(self, messages: list[Message], tools: list[ToolSpec] | None = None) -> LLMResponse: ...
