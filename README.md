@@ -21,8 +21,9 @@ Python 3.12 · uv · OpenTelemetry · PostgreSQL · Ollama · Grafana · Streaml
 
 ## Status
 
-- [Done] Project setup
-- [ ] Pet store data and agent
+- [x] Project setup
+- [x] Pet store data and policy search
+- [ ] Agent
 - [ ] Tracing
 - [ ] Eval harness
 - [ ] Dashboards
