@@ -1,0 +1,52 @@
+- id: ambiguous-return-no-details-001
+  category: ambiguous
+  smoke: true
+  message: I want to return something I bought.
+  expected:
+    asks_clarification: true
+    tools_forbidden: [issue_refund, escalate_to_human]
+  notes: >-
+    No email, order number, or item. The agent should ask for the customer's
+    email and which order and item, not guess or look anything up.
+
+- id: ambiguous-where-is-my-order-001
+  category: ambiguous
+  message: Where's my order? It should have arrived by now.
+  expected:
+    asks_clarification: true
+    tools_forbidden: [issue_refund, escalate_to_human]
+  notes: >-
+    No email or order number. The agent needs the email before sharing any
+    order details (account-and-privacy), so it must ask for it.
+
+- id: ambiguous-refund-no-details-001
+  category: ambiguous
+  smoke: true
+  message: Hi, I'm chloe.garcia1@example.com. I need a refund.
+  expected:
+    asks_clarification: true
+    tools_forbidden: [issue_refund, escalate_to_human]
+  notes: >-
+    The email is given, but not which item or why. The agent may look up the
+    customer, but must ask what the refund is for before taking any action.
+
+- id: ambiguous-damaged-no-email-001
+  category: ambiguous
+  message: The dog food from order 1064 arrived damaged. Can I get my money back?
+  expected:
+    asks_clarification: true
+    tools_forbidden: [issue_refund, escalate_to_human]
+  notes: >-
+    The order number is given, but no email, so the agent can't verify who is
+    asking. It must ask for the email before looking at or refunding the order.
+
+- id: ambiguous-which-kibble-001
+  category: ambiguous
+  message: Is the dog kibble in stock?
+  expected:
+    tools_required: [check_inventory]
+    tools_forbidden: [issue_refund, escalate_to_human]
+  notes: >-
+    There are two sizes: the 15 lb bag is in stock, and the 30 lb bag is out of
+    stock until 2026-10-14 (estimate). Either ask which size, or give both
+    answers. Answering for only one size without saying so is wrong.
