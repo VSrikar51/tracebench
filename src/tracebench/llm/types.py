@@ -17,6 +17,10 @@ class LLMResponse(BaseModel):
     output_tokens: int
     finish_reason: str
 
+class ToolSpec(BaseModel):
+    name: str
+    description: str
+    parameters: dict
 
 class LLMProvider(Protocol):
     name: str
