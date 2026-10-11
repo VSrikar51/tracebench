@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from tracebench.config import settings
 from tracebench.db import engine
+from tracebench.store.policy_search import load_policies
 
 SEED = 42
 
@@ -170,6 +171,8 @@ def seed() -> None:
         f"Seeded {len(customers)} customers, {len(products)} products, "
         f"{len(orders)} orders and {len(items)} order items."
     )
+    count = load_policies()
+    print(f"Loaded {count} policies.")
 
 
 if __name__ == "__main__":
