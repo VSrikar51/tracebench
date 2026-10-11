@@ -1,0 +1,19 @@
+# Model prices, in US dollars per 1 million tokens.
+# Local models run on your own computer, so they cost nothing.
+# When adding a paid model, copy the current prices from the provider's
+# pricing page, because prices change.
+
+models:
+  "qwen3.5:4b":
+    provider: ollama
+    input_per_million: 0.0
+    output_per_million: 0.0
+
+  "gemma4:e4b":
+    provider: ollama
+    input_per_million: 0.0
+    output_per_million: 0.0
+
+budget:
+  # Stop before spending more than this with any one paid provider (decision 0003).
+  max_spend_usd_per_provider: 4.50
