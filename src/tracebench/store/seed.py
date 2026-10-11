@@ -76,7 +76,11 @@ def make_orders(rng: random.Random, customers: list[dict]) -> tuple[list[dict], 
 
     for customer in customers:
         for _ in range(rng.randint(1, 4)):
-            ordered_on = today - timedelta(days=rng.randint(0, 90))
+            if rng.random() < 0.25:
+                days_ago = rng.randint(0, 6)   # a recent order
+            else:
+                days_ago = rng.randint(7, 90)  # an older order
+            ordered_on = today - timedelta(days=days_ago)
             age_in_days = (today - ordered_on).days
 
             if rng.random() < 0.05:
