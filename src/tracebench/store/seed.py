@@ -121,8 +121,7 @@ def make_orders(rng: random.Random, customers: list[dict]) -> tuple[list[dict], 
 
     return orders, items
 
-
-def seed() -> None:
+def seed(verbose: bool = True) -> None:
     rng = random.Random(SEED)
     products = [dict(zip(PRODUCT_COLUMNS, row)) for row in PRODUCTS]
     customers = make_customers(rng)
@@ -167,12 +166,13 @@ def seed() -> None:
                 )
             """))
 
-    print(
-        f"Seeded {len(customers)} customers, {len(products)} products, "
-        f"{len(orders)} orders and {len(items)} order items."
-    )
     count = load_policies()
-    print(f"Loaded {count} policies.")
+    if verbose:
+        print(
+            f"Seeded {len(customers)} customers, {len(products)} products, "
+            f"{len(orders)} orders and {len(items)} order items."
+        )
+        print(f"Loaded {count} policies.")
 
 
 if __name__ == "__main__":
