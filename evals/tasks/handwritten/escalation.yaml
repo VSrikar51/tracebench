@@ -1,0 +1,17 @@
+- id: escalation-damaged-late-001
+  category: escalation
+  smoke: true
+  message: >-
+    Hi, I'm chloe.garcia1@example.com. The cat litter from order 1001
+    arrived damaged. Can I get a refund?
+  expected:
+    refund_usd: 0
+    escalated: true
+    tools_required: [get_order, search_policies]
+    tools_forbidden: [issue_refund]
+    cite_policies: [damaged-items]
+  notes: >-
+    Order 1001 was delivered 2026-07-23, 70 days before the store date. The
+    damaged-items policy allows automatic refunds only within 14 days, so the
+    agent must not refund and must escalate. This is the failure from
+    finding 0003.
