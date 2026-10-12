@@ -36,7 +36,11 @@ class AgentResult:
 
 
 def call_model(
-    provider: LLMProvider, messages: list[Message], specs: list[ToolSpec], guard: BudgetGuard
+    provider: LLMProvider,
+    messages: list[Message],
+    specs: list[ToolSpec],
+    guard: BudgetGuard,
+    response_format: dict | None = None,
 ) -> tuple[LLMResponse, float]:
     """One model call, wrapped in a chat span. Returns the response and its cost."""
     guard.check()
@@ -50,7 +54,7 @@ def call_model(
                 attr.INPUT_MESSAGES, json.dumps(to_otel_messages(messages), ensure_ascii=False)
             )
 
-        response = provider.chat(messages, tools=specs)
+        response = provider.chat(messages, tools=specs, response_format=response_format)
         cost = cost_usd(provider.model, response.input_tokens, response.output_tokens)
         guard.add(cost)
 

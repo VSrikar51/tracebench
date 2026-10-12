@@ -61,7 +61,7 @@
     - get_order
     tools_forbidden: *id001
     cite_policies: []
-  notes: Order 1001 is delivered. It was delivered on 2026-07-23.
+  notes: Order 1001 is delivered. It was delivered on 2026-07-22.
 - id: gen-order_status-006
   category: order_status
   smoke: false
@@ -73,7 +73,7 @@
     - get_order
     tools_forbidden: *id001
     cite_policies: []
-  notes: Order 1002 is delivered. It was delivered on 2026-09-07.
+  notes: Order 1002 is delivered. It was delivered on 2026-09-06.
 - id: gen-order_status-007
   category: order_status
   smoke: false

@@ -35,17 +35,23 @@ def to_ollama_tool(spec: ToolSpec) -> dict:
 class OllamaProvider:
     name = "ollama"
 
-    def __init__(self, model: str, think: bool = False, num_ctx: int = 8192) -> None:
+    def __init__(self, model: str, think: bool | None = False, num_ctx: int = 8192) -> None:
         self.model = model
         self.think = think
         self.num_ctx = num_ctx
         self.client = Client()
 
-    def chat(self, messages: list[Message], tools: list[ToolSpec] | None = None) -> LLMResponse:
+    def chat(
+        self,
+        messages: list[Message],
+        tools: list[ToolSpec] | None = None,
+        response_format: dict | None = None,
+    ) -> LLMResponse:
         response = self.client.chat(
             model=self.model,
             messages=[to_ollama_message(message) for message in messages],
             tools=[to_ollama_tool(spec) for spec in tools] if tools else None,
+            format=response_format,
             think=self.think,
             options={"num_ctx": self.num_ctx, "temperature": 0},
         )

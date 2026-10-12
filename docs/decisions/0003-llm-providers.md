@@ -1,6 +1,6 @@
 # 0003. LLM providers: local-first hybrid
 
-- **Status:** Accepted
+- **Status:** Accepted; the local judge model is superseded by [0014](0014-judge-model.md)
 - **Date:** 2026-10-09
 
 ## Context

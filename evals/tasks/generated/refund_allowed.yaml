@@ -44,7 +44,7 @@
     - escalate_to_human
     cite_policies:
     - returns
-  notes: Delivered 8 days ago, within the 30-day window. Refund 1 × $7.99.
+  notes: Delivered 9 days ago, within the 30-day window. Refund 1 × $7.99.
 - id: gen-refund_allowed-004
   category: refund_allowed
   smoke: false
@@ -58,7 +58,7 @@
     - escalate_to_human
     cite_policies:
     - returns
-  notes: Delivered 27 days ago, within the 30-day window. Refund 2 × $15.99.
+  notes: Delivered 28 days ago, within the 30-day window. Refund 2 × $15.99.
 - id: gen-refund_allowed-005
   category: refund_allowed
   smoke: false
@@ -72,7 +72,7 @@
     - escalate_to_human
     cite_policies:
     - returns
-  notes: Delivered 39 days ago. Past 30 days, but the customer is gold, so the 60-day window
+  notes: Delivered 40 days ago. Past 30 days, but the customer is gold, so the 60-day window
     applies. Refund 2 × $9.99.
 - id: gen-refund_allowed-006
   category: refund_allowed
@@ -102,7 +102,7 @@
     - escalate_to_human
     cite_policies:
     - damaged-items
-  notes: Delivered 4 days ago, within the 14-day damage window. Refund 2 × $9.99; no return
+  notes: Delivered 5 days ago, within the 14-day damage window. Refund 2 × $9.99; no return
     needed.
 - id: gen-refund_allowed-008
   category: refund_allowed
@@ -117,7 +117,7 @@
     - escalate_to_human
     cite_policies:
     - damaged-items
-  notes: Delivered 8 days ago, within the 14-day damage window. Refund 1 × $59.99; no return
+  notes: Delivered 9 days ago, within the 14-day damage window. Refund 1 × $59.99; no return
     needed.
 - id: gen-refund_allowed-009
   category: refund_allowed
