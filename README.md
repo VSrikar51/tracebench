@@ -25,5 +25,6 @@ Python 3.12 · uv · OpenTelemetry · PostgreSQL · Ollama · Grafana · Streaml
 - [x] Pet store data and policy search
 - [x] Agent
 - [x] Tracing
-- [ ] Eval harness
+- [x] Eval harness: runner and code grader
+- [ ] Eval harness: LLM judge and calibration
 - [ ] Dashboards

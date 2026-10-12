@@ -1,11 +1,13 @@
 """Grade eval results with deterministic code checks, and print a report.
 
-Code checks look at what the agent did: money refunded, escalations created,
-tools called, and policies cited. They never call a model, so they're fast
-and give the same grade every time.
+Hard checks decide whether a task passes: did the customer get the right
+outcome? Soft checks (policy citations) are scored separately, as a citation
+rate (decision 0013). No check calls a model, so grading is fast and gives
+the same result every time.
 
 Usage:
     uv run python -m tracebench.evals.grade_code --run 1
+    uv run python -m tracebench.evals.grade_code --run 1 --full
 """
 
 import argparse
@@ -39,6 +41,7 @@ class Check:
     expected: Any
     actual: Any
     category: str
+    hard: bool = True
 
 
 def cites(reply: str, policy_id: str) -> bool:
@@ -94,14 +97,16 @@ def run_checks(
 
     for policy in expected.cite_policies:
         cited = cites(reply, policy)
-        checks.append(Check(f"cited:{policy}", cited, True, cited, "policy_violation"))
+        checks.append(Check(
+            f"cited:{policy}", cited, True, cited, "policy_violation", hard=False,
+        ))
 
     return checks
 
 
 def primary_category(checks: list[Check]) -> str | None:
-    """The most serious failure category among the failed checks, or None if all passed."""
-    failed = {check.category for check in checks if not check.passed}
+    """The most serious category among failed hard checks, or None if they all passed."""
+    failed = {check.category for check in checks if check.hard and not check.passed}
     for category in CATEGORY_PRIORITY:
         if category in failed:
             return category
@@ -150,7 +155,7 @@ def one_line(text_: str, limit: int = 220) -> str:
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
 
 
-def print_report(run_id: int) -> None:
+def print_report(run_id: int, full: bool = False) -> None:
     with engine.connect() as conn:
         run = conn.execute(text("""
             SELECT label, agent_model, dataset_version, git_commit
@@ -167,13 +172,20 @@ def print_report(run_id: int) -> None:
 
     total = len(rows)
     passed = sum(1 for row in rows if row["passed"])
+    soft_checks = [
+        check for row in rows for check in row["code_checks"].values() if not check["hard"]
+    ]
+    cited = sum(1 for check in soft_checks if check["passed"])
+
     print(
         f"Run {run_id} '{run['label']}' · {run['agent_model']} · "
         f"dataset {run['dataset_version']} · commit {run['git_commit']}"
     )
-    print(f"Code-check score: {passed}/{total} ({passed / total:.0%})\n")
+    print(f"Pass rate (hard checks): {passed}/{total} ({passed / total:.0%})")
+    if soft_checks:
+        print(f"Citation rate (soft):    {cited}/{len(soft_checks)} ({cited / len(soft_checks):.0%})")
 
-    print("By task category:")
+    print("\nBy task category:")
     for category in sorted({row["category"] for row in rows}):
         group = [row for row in rows if row["category"] == category]
         group_passed = sum(1 for row in group if row["passed"])
@@ -192,18 +204,28 @@ def print_report(run_id: int) -> None:
         print(f"\n  ✗ {row['task_id']}  [{row['failure_category']}]")
         for name, check in row["code_checks"].items():
             if not check["passed"]:
-                print(f"    - {name}: expected {check['expected']}, got {check['actual']}")
-        print(f"    reply: {one_line(row['reply'])}")
+                label = "" if check["hard"] else " (soft)"
+                print(f"    - {name}{label}: expected {check['expected']}, got {check['actual']}")
+        reply = row["reply"] if full else one_line(row["reply"])
+        print(f"    reply: {reply}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Grade a run with code checks and print a report.")
     parser.add_argument("--run", type=int, required=True, help="The run ID to grade.")
+    parser.add_argument("--full", action="store_true", help="Show full replies for failures.")
     args = parser.parse_args()
+
+    with engine.connect() as conn:
+        exists = conn.execute(
+            text("SELECT 1 FROM evals.runs WHERE id = :run_id"), {"run_id": args.run}
+        ).first()
+    if exists is None:
+        parser.error(f"There is no run {args.run}. See all runs with: SELECT id, label FROM evals.runs;")
 
     graded = grade_run(args.run)
     print(f"Graded {graded} results.\n")
-    print_report(args.run)
+    print_report(args.run, full=args.full)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # 0007. Judge rubric: yes/no checklist and fixed failure categories
 
-- **Status:** Accepted
+- **Status:** Accepted; the pass rule is superseded by [0013](0013-hard-and-soft-checks.md)
 - **Date:** 2026-10-09
 
 ## Context
