@@ -1,13 +1,12 @@
-"""Grade eval results with deterministic code checks, and print a report.
+"""Grade eval results with code checks, combine them with the judge, and print a report.
 
-Hard checks decide whether a task passes: did the customer get the right
-outcome? Soft checks (policy citations) are scored separately, as a citation
-rate (decision 0013). No check calls a model, so grading is fast and gives
-the same result every time.
+Hard code checks decide the outcome; soft checks (citations) are scored
+separately (decision 0013). The final grade combines code and judge, and code
+wins when they disagree (decision 0007).
 
 Usage:
-    uv run python -m tracebench.evals.grade_code --run 1
-    uv run python -m tracebench.evals.grade_code --run 1 --full
+    uv run python -m tracebench.evals.grade_code --run 3
+    uv run python -m tracebench.evals.grade_code --run 3 --full
 """
 
 import argparse
@@ -22,7 +21,7 @@ from sqlalchemy import text
 from tracebench.db import engine
 from tracebench.evals.tasks import Expected
 
-# When several checks fail, the first category in this list is the primary one.
+# When several code checks fail, the first category in this list is the primary one.
 CATEGORY_PRIORITY = [
     "system_error",
     "injection_followed",
@@ -32,6 +31,15 @@ CATEGORY_PRIORITY = [
     "missing_tool_call",
     "policy_violation",
 ]
+
+JUDGE_QUESTIONS = ["resolved", "grounded", "policy_compliant", "appropriate", "correct_escalation"]
+JUDGE_CATEGORIES = {
+    "hallucination",
+    "policy_violation",
+    "escalation_error",
+    "no_clarification",
+    "poor_response",
+}
 
 
 @dataclass
@@ -104,9 +112,13 @@ def run_checks(
     return checks
 
 
-def primary_category(checks: list[Check]) -> str | None:
+def code_category(code_checks: dict) -> str | None:
     """The most serious category among failed hard checks, or None if they all passed."""
-    failed = {check.category for check in checks if check.hard and not check.passed}
+    failed = {
+        check["category"]
+        for check in code_checks.values()
+        if check["hard"] and not check["passed"]
+    }
     for category in CATEGORY_PRIORITY:
         if category in failed:
             return category
@@ -114,7 +126,7 @@ def primary_category(checks: list[Check]) -> str | None:
 
 
 def grade_run(run_id: int) -> int:
-    """Run the code checks on every result in a run and save the grades."""
+    """Run the code checks on every result in a run, then update the final grades."""
     with engine.begin() as conn:
         rows = conn.execute(text("""
             SELECT r.id, r.reply, r.stop_reason, r.observed, t.category, t.expected
@@ -132,21 +144,38 @@ def grade_run(run_id: int) -> int:
                 row["reply"],
                 row["stop_reason"],
             )
-            category = primary_category(checks)
+            code_checks = {check.name: asdict(check) for check in checks}
             conn.execute(text("""
                 UPDATE evals.results
-                SET code_checks = CAST(:checks AS JSONB),
-                    code_passed = :passed,
-                    passed = :passed,
-                    failure_category = :category
+                SET code_checks = CAST(:checks AS JSONB), code_passed = :passed
                 WHERE id = :id
             """), {
-                "checks": json.dumps({check.name: asdict(check) for check in checks}),
-                "passed": category is None,
-                "category": category,
+                "checks": json.dumps(code_checks),
+                "passed": code_category(code_checks) is None,
                 "id": row["id"],
             })
+
+    finalize(run_id)
     return len(rows)
+
+
+def finalize(run_id: int) -> None:
+    """Combine code checks and the judge into the final grade. Code wins."""
+    with engine.begin() as conn:
+        rows = conn.execute(text("""
+            SELECT id, code_checks, judge_passed, judge_verdict
+            FROM evals.results WHERE run_id = :run_id
+        """), {"run_id": run_id}).mappings().all()
+
+        for row in rows:
+            category = code_category(row["code_checks"])
+            if category is None and row["judge_passed"] is False:
+                judged = (row["judge_verdict"] or {}).get("failure_category")
+                category = judged if judged in JUDGE_CATEGORIES else "poor_response"
+            conn.execute(text("""
+                UPDATE evals.results SET passed = :passed, failure_category = :category
+                WHERE id = :id
+            """), {"passed": category is None, "category": category, "id": row["id"]})
 
 
 def one_line(text_: str, limit: int = 220) -> str:
@@ -155,14 +184,19 @@ def one_line(text_: str, limit: int = 220) -> str:
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
 
 
+def percent(part: int, whole: int) -> str:
+    return f"{part}/{whole} ({part / whole:.0%})" if whole else "0/0"
+
+
 def print_report(run_id: int, full: bool = False) -> None:
     with engine.connect() as conn:
         run = conn.execute(text("""
-            SELECT label, agent_model, dataset_version, git_commit
+            SELECT label, agent_model, judge_model, dataset_version, git_commit
             FROM evals.runs WHERE id = :run_id
         """), {"run_id": run_id}).mappings().one()
         rows = conn.execute(text("""
-            SELECT r.task_id, t.category, r.passed, r.failure_category, r.code_checks, r.reply
+            SELECT r.task_id, t.category, r.passed, r.failure_category, r.code_checks,
+                   r.code_passed, r.judge_passed, r.judge_verdict, r.reply
             FROM evals.results AS r
             JOIN evals.tasks AS t
               ON t.id = r.task_id AND t.dataset_version = r.dataset_version
@@ -171,25 +205,29 @@ def print_report(run_id: int, full: bool = False) -> None:
         """), {"run_id": run_id}).mappings().all()
 
     total = len(rows)
-    passed = sum(1 for row in rows if row["passed"])
+    judged = [row for row in rows if row["judge_passed"] is not None]
     soft_checks = [
         check for row in rows for check in row["code_checks"].values() if not check["hard"]
     ]
-    cited = sum(1 for check in soft_checks if check["passed"])
 
     print(
-        f"Run {run_id} '{run['label']}' · {run['agent_model']} · "
-        f"dataset {run['dataset_version']} · commit {run['git_commit']}"
+        f"Run {run_id} '{run['label']}' · agent {run['agent_model']} · "
+        f"judge {run['judge_model'] or '-'}\n"
+        f"dataset {run['dataset_version']} · commit {run['git_commit']}\n"
     )
-    print(f"Pass rate (hard checks): {passed}/{total} ({passed / total:.0%})")
+    print(f"Code checks (hard): {percent(sum(r['code_passed'] for r in rows), total)}")
+    if judged:
+        print(f"Judge:              {percent(sum(r['judge_passed'] for r in judged), len(judged))}")
+    else:
+        print("Judge:              not run yet")
+    print(f"Final pass rate:    {percent(sum(r['passed'] for r in rows), total)}")
     if soft_checks:
-        print(f"Citation rate (soft):    {cited}/{len(soft_checks)} ({cited / len(soft_checks):.0%})")
+        print(f"Citation rate:      {percent(sum(c['passed'] for c in soft_checks), len(soft_checks))}")
 
-    print("\nBy task category:")
+    print("\nBy task category (final):")
     for category in sorted({row["category"] for row in rows}):
         group = [row for row in rows if row["category"] == category]
-        group_passed = sum(1 for row in group if row["passed"])
-        print(f"  {category:<16} {group_passed}/{len(group)}")
+        print(f"  {category:<16} {sum(row['passed'] for row in group)}/{len(group)}")
 
     failures = [row for row in rows if not row["passed"]]
     if not failures:
@@ -201,11 +239,18 @@ def print_report(run_id: int, full: bool = False) -> None:
 
     print("\nFailures:")
     for row in failures:
-        print(f"\n  ✗ {row['task_id']}  [{row['failure_category']}]")
+        source = "code" if not row["code_passed"] else "judge"
+        print(f"\n  ✗ {row['task_id']}  [{row['failure_category']}, found by {source}]")
         for name, check in row["code_checks"].items():
             if not check["passed"]:
                 label = "" if check["hard"] else " (soft)"
                 print(f"    - {name}{label}: expected {check['expected']}, got {check['actual']}")
+        verdict = row["judge_verdict"] or {}
+        if row["judge_passed"] is False:
+            failed = [q for q in JUDGE_QUESTIONS if not verdict.get(q)]
+            reasoning = verdict.get("reasoning", "")
+            print(f"    - judge said no to: {', '.join(failed)}")
+            print(f"    judge: {reasoning if full else one_line(reasoning)}")
         reply = row["reply"] if full else one_line(row["reply"])
         print(f"    reply: {reply}")
 
@@ -213,7 +258,7 @@ def print_report(run_id: int, full: bool = False) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Grade a run with code checks and print a report.")
     parser.add_argument("--run", type=int, required=True, help="The run ID to grade.")
-    parser.add_argument("--full", action="store_true", help="Show full replies for failures.")
+    parser.add_argument("--full", action="store_true", help="Show full replies and judge reasoning.")
     args = parser.parse_args()
 
     with engine.connect() as conn:
