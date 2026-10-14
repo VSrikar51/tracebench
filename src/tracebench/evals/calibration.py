@@ -24,8 +24,12 @@ SAMPLE_SEED = 7
 SAMPLE_FRACTION = 0.5
 
 
-def label_sample(run_id: int) -> list[int]:
-    """Result IDs to label: about half of each task category, chosen with a fixed seed."""
+def label_sample(run_id: int, split: str = "dev") -> list[int]:
+    """Result IDs for one label set.
+
+    dev: about half of each task category, chosen with a fixed seed.
+    test: every other result in the run, which come from different tasks.
+    """
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT r.id, t.category
@@ -41,11 +45,16 @@ def label_sample(run_id: int) -> list[int]:
         by_category[row["category"]].append(row["id"])
 
     rng = random.Random(SAMPLE_SEED)
-    chosen = []
+    dev = []
     for category in sorted(by_category):
         ids = by_category[category]
-        chosen.extend(rng.sample(ids, math.ceil(len(ids) * SAMPLE_FRACTION)))
-    return sorted(chosen)
+        dev.extend(rng.sample(ids, math.ceil(len(ids) * SAMPLE_FRACTION)))
+
+    if split == "dev":
+        return sorted(dev)
+    if split == "test":
+        return sorted(set(row["id"] for row in rows) - set(dev))
+    raise ValueError(f"Unknown split '{split}'. Use 'dev' or 'test'.")
 
 
 @dataclass
@@ -115,7 +124,8 @@ def fmt(value: float | None, percent: bool = True) -> str:
     return f"{value:.0%}" if percent else f"{value:.2f}"
 
 
-def calibrate(run_id: int, labeler: str) -> None:
+def calibrate(run_id: int, labeler: str, split: str = "dev") -> None:
+    ids = label_sample(run_id, split)
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT r.task_id,
@@ -131,9 +141,9 @@ def calibrate(run_id: int, labeler: str) -> None:
             JOIN evals.results AS r ON r.id = h.result_id
             JOIN evals.tasks AS t
               ON t.id = r.task_id AND t.dataset_version = r.dataset_version
-            WHERE r.run_id = :run_id AND h.labeler = :labeler
+            WHERE r.run_id = :run_id AND h.labeler = :labeler AND r.id = ANY(:ids)
             ORDER BY t.category, r.task_id
-        """), {"run_id": run_id, "labeler": labeler}).mappings().all()
+        """), {"run_id": run_id, "labeler": labeler, "ids": ids}).mappings().all()
 
     if not rows:
         print(f"No labels from '{labeler}' for run {run_id}.")
@@ -153,7 +163,7 @@ def calibrate(run_id: int, labeler: str) -> None:
         results[name] = agreement
 
     human_passes = sum(row["human_passed"] for row in rows)
-    print(f"Calibration · run {run_id} · labeler {labeler} · {len(rows)} labels")
+    print(f"Calibration · run {run_id} · {split} set · labeler {labeler} · {len(rows)} labels")
     print(f"Human pass rate: {human_passes}/{len(rows)} ({human_passes / len(rows):.0%})\n")
 
     print(f"{'Grader':<22} {'Agree':>6} {'Kappa':>6}  {'Meaning':<18} {'Catch':>6} {'False alarm':>12}")
@@ -192,8 +202,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Compare the graders with human labels.")
     parser.add_argument("--run", type=int, required=True)
     parser.add_argument("--labeler", default="srikar")
+    parser.add_argument("--split", choices=["dev", "test"], default="dev")
     args = parser.parse_args()
-    calibrate(args.run, args.labeler)
+    calibrate(args.run, args.labeler, args.split)
 
 
 if __name__ == "__main__":

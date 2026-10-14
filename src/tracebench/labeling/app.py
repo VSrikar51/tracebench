@@ -71,10 +71,11 @@ st.title("🏷️ Label agent results")
 with st.sidebar:
     run_id = int(st.number_input("Run ID", min_value=1, value=3, step=1))
     labeler = st.text_input("Your name", value="srikar").strip()
+    split = st.radio("Label set", ["dev", "test"], horizontal=True)
     with st.expander("Labeling guide", expanded=True):
         st.markdown(GUIDE)
 
-sample = label_sample(run_id)
+sample = label_sample(run_id, split)
 if not sample or not labeler:
     st.warning("Choose a run that has results, and enter your name.")
     st.stop()
@@ -102,7 +103,7 @@ with engine.connect() as conn:
         WHERE r.id = :id
     """), {"id": result_id}).mappings().one()
 
-st.caption(f"Result {result_id} · task `{row['task_id']}` · category `{row['category']}`")
+st.caption(f"Result {result_id} · {split} set · task `{row['task_id']}` · category `{row['category']}`")
 left, right = st.columns(2)
 
 with left:
