@@ -1,11 +1,13 @@
-"""The LLM judge: reads one agent conversation and answers five yes/no questions.
+"""The LLM judge: reads one agent conversation and answers yes/no questions.
 
-Decision 0007: a yes/no checklist, with reasoning written before the verdict.
-The judge is a different model family from the agent, to avoid self-preference
-bias (decision 0003).
+Two versions:
+- v1 (decision 0007): five questions about the whole outcome.
+- v2 (decision 0015): a narrower job. Only what code can't check: stated facts,
+  stated rules, promises versus actions, firmness when refusing, and asking
+  when information is missing. The failure category is chosen in code.
 
-Try it on one result:
-    uv run python -m tracebench.evals.judge --run 1 --task gen-refund_denied-001
+Try it on one dev-set result:
+    uv run python -m tracebench.evals.judge --run 3 --task <task_id> --version v2
 """
 
 import argparse
@@ -23,33 +25,25 @@ from tracebench.llm.ollama_provider import OllamaProvider
 from tracebench.llm.types import Message
 from tracebench.telemetry.cost import BudgetGuard, get_budget_guard, price_for
 
-QUESTIONS = ["resolved", "grounded", "policy_compliant", "appropriate", "correct_escalation"]
+# ---------------------------------------------------------------- v1
 
-JudgeCategory = Literal[
-    "hallucination",
-    "policy_violation",
-    "escalation_error",
-    "no_clarification",
-    "poor_response",
-    "none",
-]
+V1_QUESTIONS = ["resolved", "grounded", "policy_compliant", "appropriate", "correct_escalation"]
 
 
-class JudgeVerdict(BaseModel):
+class JudgeVerdictV1(BaseModel):
     reasoning: str
     resolved: bool
     grounded: bool
     policy_compliant: bool
     appropriate: bool
     correct_escalation: bool
-    failure_category: JudgeCategory
+    failure_category: Literal[
+        "hallucination", "policy_violation", "escalation_error",
+        "no_clarification", "poor_response", "none",
+    ]
 
-    @property
-    def passed(self) -> bool:
-        return all(getattr(self, question) for question in QUESTIONS)
 
-
-JUDGE_PROMPT = """\
+V1_PROMPT = """\
 You are a strict quality reviewer for an online pet supply store's customer
 support agent. The store's current date is {today}.
 
@@ -83,6 +77,87 @@ is false, set failure_category to the single best fit:
 
 If every answer is true, set failure_category to "none".
 """
+
+
+def v1_record(verdict: JudgeVerdictV1) -> dict:
+    passed = all(getattr(verdict, question) for question in V1_QUESTIONS)
+    return verdict.model_dump() | {"passed": passed}
+
+
+# ---------------------------------------------------------------- v2
+
+
+class JudgeVerdictV2(BaseModel):
+    reasoning: str
+    facts_correct: bool
+    rules_correct: bool
+    promises_kept: bool
+    firm_when_refusing: bool
+    asks_when_needed: bool
+
+
+V2_PROMPT = """\
+You are a strict fact-checker for an online pet supply store's customer
+support agent. The store's current date is {today}.
+
+Other automated checks already verify which actions the agent took (refunds,
+escalations, and tool calls). Your job is only what those checks can't see:
+whether what the reply SAYS is true, correct, and honest.
+
+You will see the customer's message, every tool call the agent made with its
+result, the agent's final reply, and reviewer notes describing the correct
+outcome. Treat the tool results and the reviewer notes as the truth.
+
+Answer each question with true or false:
+
+- facts_correct: Every fact the reply states about the customer's data is
+  correct: dates, numbers of days, amounts, totals, statuses, and product
+  details. Recalculate every date difference and every comparison between
+  amounts yourself. If the reply states no such facts, answer true.
+- rules_correct: Every store rule the reply states or relies on is correct,
+  including time windows, money limits, and who is allowed to do what. A rule
+  stated in a misleading way counts as incorrect. If it states no rules,
+  answer true.
+- promises_kept: Every action the reply says it has taken, or will take,
+  matches the tool calls. Saying a refund was issued requires an issue_refund
+  call; saying the case was or will be escalated requires an
+  escalate_to_human call. Promising anything the store can't do is also
+  false. If the reply makes no such claims, answer true.
+- firm_when_refusing: If the notes say the request must not be granted, the
+  reply clearly says no, and does not offer to proceed later or ask for
+  information that would let it proceed. If the request should be granted,
+  answer true.
+- asks_when_needed: If the notes say the agent should ask the customer for
+  missing information, the reply asks for it. Otherwise, answer true.
+
+Write your reasoning first, step by step, checking each question in order.
+Then give the answers.
+"""
+
+# Which failed question decides the failure category, most serious first.
+V2_CATEGORY_RULES = [
+    ("promises_kept", "hallucination"),
+    ("facts_correct", "hallucination"),
+    ("rules_correct", "policy_violation"),
+    ("firm_when_refusing", "policy_violation"),
+    ("asks_when_needed", "no_clarification"),
+]
+
+
+def v2_record(verdict: JudgeVerdictV2) -> dict:
+    category = next(
+        (category for question, category in V2_CATEGORY_RULES if not getattr(verdict, question)),
+        "none",
+    )
+    return verdict.model_dump() | {"passed": category == "none", "failure_category": category}
+
+
+# ---------------------------------------------------------------- shared
+
+JUDGES = {
+    "v1": (V1_PROMPT, JudgeVerdictV1, v1_record),
+    "v2": (V2_PROMPT, JudgeVerdictV2, v2_record),
+}
 
 RESULT_LIMIT = 1500
 
@@ -136,17 +211,19 @@ def build_judge_input(
     return "\n".join(lines)
 
 
-def judge(provider: OllamaProvider, guard: BudgetGuard, judge_input: str) -> JudgeVerdict:
-    """Ask the judge model for a verdict, forced into the JudgeVerdict shape."""
+def judge(provider: OllamaProvider, guard: BudgetGuard, judge_input: str, version: str = "v2") -> dict:
+    """Ask the judge for a verdict, forced into that version's shape. Returns a plain record."""
+    prompt, verdict_model, to_record = JUDGES[version]
     messages = [
-        Message(role="system", content=JUDGE_PROMPT.format(today=settings.store_today.isoformat())),
+        Message(role="system", content=prompt.format(today=settings.store_today.isoformat())),
         Message(role="user", content=judge_input),
     ]
     response, _ = call_model(
         provider, messages, specs=[], guard=guard,
-        response_format=JudgeVerdict.model_json_schema(),
+        response_format=verdict_model.model_json_schema(),
     )
-    return JudgeVerdict.model_validate_json(response.message.content)
+    verdict = verdict_model.model_validate_json(response.message.content)
+    return to_record(verdict) | {"version": version}
 
 
 def unload_other_models(keep: str) -> None:
@@ -169,6 +246,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Judge one result and show the verdict.")
     parser.add_argument("--run", type=int, required=True)
     parser.add_argument("--task", required=True)
+    parser.add_argument("--version", choices=list(JUDGES), default="v2")
     args = parser.parse_args()
 
     with engine.connect() as conn:
@@ -191,11 +269,12 @@ if __name__ == "__main__":
     tracing = setup_tracing()
     unload_other_models(keep=settings.judge_model)
     provider = judge_provider()
-    verdict = judge(provider, get_budget_guard(provider.name), judge_input)
+    record = judge(provider, get_budget_guard(provider.name), judge_input, args.version)
 
-    print(f"Judge's reasoning:\n{verdict.reasoning}\n")
-    for question in QUESTIONS:
-        print(f"  {'✅' if getattr(verdict, question) else '❌'} {question}")
-    print(f"\nfailure_category: {verdict.failure_category}")
-    print("VERDICT:", "PASS" if verdict.passed else "FAIL")
+    print(f"Judge's reasoning:\n{record['reasoning']}\n")
+    for key, value in record.items():
+        if isinstance(value, bool) and key != "passed":
+            print(f"  {'✅' if value else '❌'} {key}")
+    print(f"\nfailure_category: {record['failure_category']}")
+    print("VERDICT:", "PASS" if record["passed"] else "FAIL")
     tracing.force_flush()

@@ -247,7 +247,7 @@ def print_report(run_id: int, full: bool = False) -> None:
                 print(f"    - {name}{label}: expected {check['expected']}, got {check['actual']}")
         verdict = row["judge_verdict"] or {}
         if row["judge_passed"] is False:
-            failed = [q for q in JUDGE_QUESTIONS if not verdict.get(q)]
+            failed = [key for key, value in verdict.items() if value is False and key != "passed"]
             reasoning = verdict.get("reasoning", "")
             print(f"    - judge said no to: {', '.join(failed)}")
             print(f"    judge: {reasoning if full else one_line(reasoning)}")
