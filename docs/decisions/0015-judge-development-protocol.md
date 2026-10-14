@@ -47,3 +47,13 @@ reported as is, including any gap between dev and test performance.
 - Test-set calibration results are not viewed until the final evaluation.
 - A dev/test gap is reported as overfitting, not hidden.
 - One labeler only; agreement between multiple labelers is not measured.
+
+## Known limitation
+
+The dev/test split was created after the run 3 report had already printed
+every failing result, including some now in the test set. Those replies were
+read before the split, and the general patterns behind judge v2 were partly
+drawn from them. The test labels and the judge's agreement with them were not
+seen. To limit the effect, judge prompts contain only general principles and
+no references to specific tasks, customers, orders, or amounts. The success
+criteria above are unchanged.
