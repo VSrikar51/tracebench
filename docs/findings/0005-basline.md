@@ -5,6 +5,9 @@
 - **Model:** `qwen3.5:4b` via Ollama, thinking off, temperature 0, context 8192
 - **Grading:** code checks only (hard and soft, decision 0013); no judge yet
 - **Duration:** 16.1 minutes for 60 tasks
+> **Update:** after the timezone fix (finding 0006), the official baseline is
+> **run 3**: 42/60 (70%) pass rate, 16/37 (43%) citation rate, dataset
+> `46350a22d36d`. The patterns below are unchanged.
 
 ## Scores
 
