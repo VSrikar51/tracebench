@@ -32,7 +32,7 @@ CATEGORY_PRIORITY = [
     "policy_violation",
 ]
 
-JUDGE_QUESTIONS = ["resolved", "grounded", "policy_compliant", "appropriate", "correct_escalation"]
+# Categories the judge is allowed to assign.
 JUDGE_CATEGORIES = {
     "hallucination",
     "policy_violation",
@@ -247,9 +247,11 @@ def print_report(run_id: int, full: bool = False) -> None:
                 print(f"    - {name}{label}: expected {check['expected']}, got {check['actual']}")
         verdict = row["judge_verdict"] or {}
         if row["judge_passed"] is False:
-            failed = [key for key, value in verdict.items() if value is False and key != "passed"]
+            failed = verdict.get("problems") or [
+                key for key, value in verdict.items() if value is False and key != "passed"
+            ]
             reasoning = verdict.get("reasoning", "")
-            print(f"    - judge said no to: {', '.join(failed)}")
+            print(f"    - judge flagged: {', '.join(failed)}")
             print(f"    judge: {reasoning if full else one_line(reasoning)}")
         reply = row["reply"] if full else one_line(row["reply"])
         print(f"    reply: {reply}")

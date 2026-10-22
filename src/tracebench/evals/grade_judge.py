@@ -4,7 +4,7 @@ Judge only the dev set while developing (decision 0015). The test set is judged
 once, at the final evaluation.
 
 Usage:
-    uv run python -m tracebench.evals.grade_judge --run 3 --split dev --version v2
+    uv run python -m tracebench.evals.grade_judge --run 3 --split dev --version v3
 """
 
 import argparse
@@ -18,11 +18,10 @@ from tracebench.db import engine
 from tracebench.evals.calibration import label_sample
 from tracebench.evals.grade_code import finalize
 from tracebench.evals.judge import (
-    JUDGES,
-    build_judge_input,
-    judge,
+    ALL_VERSIONS,
+    RESULT_QUERY,
     judge_provider,
-    load_tool_calls,
+    judge_result,
     unload_other_models,
 )
 from tracebench.telemetry.cost import BudgetExceeded, get_budget_guard
@@ -41,14 +40,10 @@ def save_verdict(result_id: int, verdict: dict, passed: bool | None) -> None:
 def judge_run(run_id: int, split: str, version: str) -> None:
     ids = label_sample(run_id, split)
     with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT r.id, r.task_id, r.reply, r.trace_id, t.message, t.expected, t.notes
-            FROM evals.results AS r
-            JOIN evals.tasks AS t
-              ON t.id = r.task_id AND t.dataset_version = r.dataset_version
-            WHERE r.run_id = :run_id AND r.id = ANY(:ids)
-            ORDER BY r.id
-        """), {"run_id": run_id, "ids": ids}).mappings().all()
+        rows = conn.execute(
+            text(f"{RESULT_QUERY.text} WHERE r.run_id = :run_id AND r.id = ANY(:ids) ORDER BY r.id"),
+            {"run_id": run_id, "ids": ids},
+        ).mappings().all()
 
     tracing = setup_tracing()
     unload_other_models(keep=settings.judge_model)
@@ -64,14 +59,11 @@ def judge_run(run_id: int, split: str, version: str) -> None:
     print(f"Judging {len(rows)} {split}-set results with {provider.model}, judge {version}...\n")
     started = time.perf_counter()
     passed_count = 0
+    error_count = 0
     try:
         for number, row in enumerate(rows, start=1):
-            judge_input = build_judge_input(
-                row["message"], row["expected"], row["notes"],
-                load_tool_calls(row["trace_id"]), row["reply"],
-            )
             try:
-                record = judge(provider, guard, judge_input, version)
+                record = judge_result(provider, guard, dict(row), version)
                 save_verdict(row["id"], record, record["passed"])
                 passed_count += record["passed"]
                 label = "pass" if record["passed"] else f"FAIL ({record['failure_category']})"
@@ -79,6 +71,7 @@ def judge_run(run_id: int, split: str, version: str) -> None:
                 raise
             except Exception as error:
                 save_verdict(row["id"], {"error": str(error), "version": version}, None)
+                error_count += 1
                 label = "judge error"
             print(f"[{number:>2}/{len(rows)}] {label}")
     finally:
@@ -86,7 +79,10 @@ def judge_run(run_id: int, split: str, version: str) -> None:
 
     finalize(run_id)
     minutes = (time.perf_counter() - started) / 60
-    print(f"\nJudged {len(rows)} results in {minutes:.1f} minutes ({passed_count} passed).")
+    print(
+        f"\nJudged {len(rows)} results in {minutes:.1f} minutes "
+        f"({passed_count} passed, {error_count} judge errors)."
+    )
     print(f"Next: uv run python -m tracebench.evals.calibration --run {run_id} --split {split}")
 
 
@@ -94,7 +90,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Judge one label set of a run.")
     parser.add_argument("--run", type=int, required=True)
     parser.add_argument("--split", choices=["dev", "test"], default="dev")
-    parser.add_argument("--version", choices=list(JUDGES), default="v2")
+    parser.add_argument("--version", choices=ALL_VERSIONS, default="v3")
     args = parser.parse_args()
     judge_run(args.run, args.split, args.version)
 
