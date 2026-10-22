@@ -57,3 +57,20 @@ drawn from them. The test labels and the judge's agreement with them were not
 seen. To limit the effect, judge prompts contain only general principles and
 no references to specific tasks, customers, orders, or amounts. The success
 criteria above are unchanged.
+
+## Amendment (2026-10-21): revised v3
+
+Judge v2 performed worse than v1 on the dev set (finding 0009): asked to
+decide whether each question applied, the small model answered "false" for
+questions that didn't apply. v3 is revised to address this, in addition to
+the planned fact sheet:
+
+- Code decides which questions apply to each task, using only general rules
+  based on the task's category and answer key. The judge never decides
+  applicability.
+- Questions ask whether a specific problem exists, and the judge answers
+  true only if it can quote the words that show the problem.
+- A fact sheet computed in code (days since delivery, return window, actions
+  actually taken) is included, so the judge does no arithmetic.
+
+The success criteria and the sealed test set are unchanged.
