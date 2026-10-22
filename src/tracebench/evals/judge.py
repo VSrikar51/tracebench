@@ -237,7 +237,13 @@ def unload_other_models(keep: str) -> None:
 
 def judge_provider() -> OllamaProvider:
     price_for(settings.judge_model)
-    return OllamaProvider(settings.judge_model, think=None, num_ctx=settings.judge_num_ctx)
+    return OllamaProvider(
+        settings.judge_model,
+        think=None,
+        num_ctx=settings.judge_num_ctx,
+        max_tokens=settings.judge_max_tokens,
+        timeout=settings.judge_timeout_s,
+    )
 
 
 if __name__ == "__main__":

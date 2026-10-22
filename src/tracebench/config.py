@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     agent_num_ctx: int = 8192
     judge_model: str = "phi4-mini"
     judge_num_ctx: int = 8192
+    judge_max_tokens: int = 1024
+    judge_timeout_s: float = 180
     trace_content: bool = True
 
 
