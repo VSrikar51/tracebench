@@ -26,5 +26,16 @@ Python 3.12 · uv · OpenTelemetry · PostgreSQL · Ollama · Grafana · Streaml
 - [x] Agent
 - [x] Tracing
 - [x] Eval harness: runner and code grader
-- [ ] Eval harness: LLM judge and calibration
-- [ ] Dashboards
+- [x] Eval harness: LLM judge and calibration
+- [x] Dashboards
+
+## Dashboards
+
+![Eval dashboard](docs/images/evals1.png)
+![Eval dashboard](docs/images/evals2.png)
+![Eval dashboard](docs/images/evals3.png)
+
+![Operations dashboard](docs/images/ops1.png)
+![Operations dashboard](docs/images/ops2.png)
+![Operations dashboard](docs/images/ops3.png)
+![Operations dashboard](docs/images/ops4.png)
