@@ -2,8 +2,6 @@
 
 Tracing and evaluation platform for LLM agents.
 
-> **Work in progress**: being built step by step.
-
 ## What it does
 
 tracebench watches an AI customer-support agent for a fictional pet store,
